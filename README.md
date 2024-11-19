@@ -136,10 +136,11 @@ npm -v # should print `10.9.0`
 
 ```
 
-<details>
-<summary><h2 style="display: inline-block">Development</h2></summary>
+## Development
 
-### Environment Setup
+<details>
+<summary><h4 style="display: inline-block">Environment Setup with .env file</h4></summary>
+
 Copy `.env.example` to create your `.env` file:
 ```bash
 cp .env.example .env
