@@ -158,18 +158,31 @@ def test_clear_cache(prompter: Prompter, tmp_path):
     with open(os.path.join(mock_cache_dir, "cache.arrow"), 'w') as f:
         f.write("mock cache data")
 
+    # Create a read-only file to test permission errors
+    readonly_file = os.path.join(cache_dir, "readonly.txt")
+    with open(readonly_file, 'w') as f:
+        f.write("readonly content")
+    os.chmod(readonly_file, 0o444)
+
     # Verify cache exists
     assert os.path.exists(metadata_db_path)
     assert os.path.exists(mock_cache_dir)
+    assert os.path.exists(readonly_file)
 
     # Clear cache
     prompter.clear_cache(working_dir=cache_dir)
 
-    # Verify cache is cleared
+    # Verify cache is cleared (even with readonly file)
     assert not os.path.exists(metadata_db_path)
     assert not os.path.exists(mock_cache_dir)
-    assert len(os.listdir(cache_dir)) == 0
+    assert not os.path.exists(readonly_file)
 
     # Test clearing non-existent directory (should not raise error)
     non_existent_dir = os.path.join(tmp_path, "non_existent")
     prompter.clear_cache(working_dir=non_existent_dir)
+
+    # Test using environment variable
+    os.environ["CURATOR_CACHE_DIR"] = str(tmp_path)
+    os.makedirs(os.path.join(str(tmp_path), "env_var_test"))
+    prompter.clear_cache()  # Should use CURATOR_CACHE_DIR
+    assert len(os.listdir(str(tmp_path))) == 0

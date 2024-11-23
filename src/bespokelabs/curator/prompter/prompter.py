@@ -121,26 +121,40 @@ class Prompter:
 
         Args:
             working_dir (Optional[str]): Specific working directory to clear.
-                If None, clears the default cache directory.
+                If None, uses CURATOR_CACHE_DIR environment variable or default cache directory.
         """
-        cache_dir = (working_dir if working_dir is not None
-                    else os.path.expanduser(_CURATOR_DEFAULT_CACHE_DIR))
+        if working_dir is None:
+            cache_dir = os.environ.get(
+                "CURATOR_CACHE_DIR",
+                os.path.expanduser(_CURATOR_DEFAULT_CACHE_DIR),
+            )
+        else:
+            cache_dir = working_dir
 
         if not os.path.exists(cache_dir):
+            logger.info(f"Cache directory {cache_dir} does not exist, nothing to clear")
             return
 
         # Clear metadata DB
         metadata_db_path = os.path.join(cache_dir, "metadata.db")
         if os.path.exists(metadata_db_path):
-            os.remove(metadata_db_path)
+            try:
+                os.remove(metadata_db_path)
+                logger.info(f"Successfully removed metadata database at {metadata_db_path}")
+            except Exception as e:
+                logger.warning(f"Error while removing metadata.db: {e}")
 
-        # Clear all cached files
+        # Clear all cached files and run directories
         for item in os.listdir(cache_dir):
             item_path = os.path.join(cache_dir, item)
-            if os.path.isfile(item_path):
-                os.remove(item_path)
-            elif os.path.isdir(item_path):
-                shutil.rmtree(item_path)
+            try:
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                logger.info(f"Successfully removed cache item: {item_path}")
+            except Exception as e:
+                logger.warning(f"Error while removing {item_path}: {e}")
 
     def _completions(
         self,
@@ -194,7 +208,7 @@ class Prompter:
                 str(prompt_func_hash),
                 str(self.prompt_formatter.model_name),
                 str(
-                    self.prompt_formatter.response_format.schema_json()
+                    json.dumps(self.prompt_formatter.response_format.model_json_schema())
                     if self.prompt_formatter.response_format
                     else "text"
                 ),
@@ -224,7 +238,7 @@ class Prompter:
             "parse_func": parse_func_source,
             "model_name": self.prompt_formatter.model_name,
             "response_format": (
-                self.prompt_formatter.response_format.schema_json()
+                json.dumps(self.prompt_formatter.response_format.model_json_schema())
                 if self.prompt_formatter.response_format
                 else "text"
             ),
