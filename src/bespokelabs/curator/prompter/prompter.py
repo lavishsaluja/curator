@@ -3,7 +3,6 @@
 import inspect
 import json
 import os
-import shutil
 from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, Optional, Type, TypeVar, Union
 
@@ -117,46 +116,6 @@ class Prompter:
         """
         return self._completions(self._request_processor, dataset, working_dir)
 
-    def clear_cache(self, working_dir: Optional[str] = None) -> None:
-        """Clear all cached data for this prompter instance.
-
-        Args:
-            working_dir (Optional[str]): Specific working directory to clear.
-                If None, uses CURATOR_CACHE_DIR environment variable or default cache directory.
-        """
-        if working_dir is None:
-            cache_dir = os.environ.get(
-                "CURATOR_CACHE_DIR",
-                os.path.expanduser(_CURATOR_DEFAULT_CACHE_DIR),
-            )
-        else:
-            cache_dir = working_dir
-
-        if not os.path.exists(cache_dir):
-            logger.info(f"Cache directory {cache_dir} does not exist, nothing to clear")
-            return
-
-        # Clear metadata DB
-        metadata_db_path = os.path.join(cache_dir, "metadata.db")
-        if os.path.exists(metadata_db_path):
-            try:
-                os.remove(metadata_db_path)
-                logger.info(f"Successfully removed metadata database at {metadata_db_path}")
-            except Exception as e:
-                logger.warning(f"Error while removing metadata.db: {e}")
-
-        # Clear all cached files and run directories
-        for item in os.listdir(cache_dir):
-            item_path = os.path.join(cache_dir, item)
-            try:
-                if os.path.isfile(item_path):
-                    os.remove(item_path)
-                elif os.path.isdir(item_path):
-                    shutil.rmtree(item_path)
-                logger.info(f"Successfully removed cache item: {item_path}")
-            except Exception as e:
-                logger.warning(f"Error while removing {item_path}: {e}")
-
     def _completions(
         self,
         request_processor: BaseRequestProcessor,
@@ -169,8 +128,6 @@ class Prompter:
 
         Args:
             dataset (Iterable): A dataset consisting of a list of items to apply completions
-            prompter (Prompter): A Prompter that contains the logic for formatting each
-                item in the dataset
             working_dir (str): The working directory to save the requests.jsonl, responses.jsonl, and dataset.arrow files.
 
         Returns:
@@ -180,9 +137,6 @@ class Prompter:
         if not isinstance(dataset, Dataset) and dataset is not None:
             dataset = Dataset.from_generator(dataset)
 
-        if self is None:
-            raise ValueError("Prompter must be provided")
-
         if working_dir is None:
             curator_cache_dir = os.environ.get(
                 "CURATOR_CACHE_DIR",
@@ -191,46 +145,23 @@ class Prompter:
         else:
             curator_cache_dir = working_dir
 
-        dataset_hash = (
-            dataset._fingerprint
-            if dataset is not None
-            else xxh64("").hexdigest()
-        )
-
+        dataset_hash = dataset._fingerprint if dataset is not None else xxh64("").hexdigest()
         prompt_func_hash = _get_function_hash(self.prompt_formatter.prompt_func)
-
-        # Used to name the dataset .arrow file, but not the cache directory name
-        # Modifying `parse_func` creates a new dataset file from cached responses
         parse_func_hash = _get_function_hash(self.prompt_formatter.parse_func)
 
-        fingerprint_str = "_".join(
-            [
-                str(dataset_hash),
-                str(prompt_func_hash),
-                str(self.prompt_formatter.model_name),
-                str(
-                    json.dumps(self.prompt_formatter.response_format.model_json_schema())
-                    if self.prompt_formatter.response_format
-                    else "text"
-                ),
-                str(self.batch_mode),
-            ]
-        )
-
+        fingerprint_str = "_".join([
+            str(dataset_hash),
+            str(prompt_func_hash),
+            str(self.prompt_formatter.model_name),
+            str(json.dumps(self.prompt_formatter.response_format.model_json_schema()) if self.prompt_formatter.response_format else "text"),
+            str(self.batch_mode),
+        ])
         fingerprint = xxh64(fingerprint_str.encode("utf-8")).hexdigest()
         metadata_db_path = os.path.join(curator_cache_dir, "metadata.db")
         metadata_db = MetadataDB(metadata_db_path)
 
-        # Get the source code of the prompt function
-        prompt_func_source = _get_function_source(
-            self.prompt_formatter.prompt_func
-        )
-        if self.prompt_formatter.parse_func is not None:
-            parse_func_source = _get_function_source(
-                self.prompt_formatter.parse_func
-            )
-        else:
-            parse_func_source = ""
+        prompt_func_source = _get_function_source(self.prompt_formatter.prompt_func)
+        parse_func_source = _get_function_source(self.prompt_formatter.parse_func) if self.prompt_formatter.parse_func is not None else ""
 
         metadata_dict = {
             "timestamp": datetime.now().isoformat(),

@@ -7,6 +7,7 @@ from datasets import Dataset
 from pydantic import BaseModel
 
 from bespokelabs.curator import Prompter
+from bespokelabs.curator import clear_cache
 
 
 class MockResponseFormat(BaseModel):
@@ -37,6 +38,7 @@ def prompter() -> Prompter:
     )
 
 
+@pytest.mark.skip(reason="Requires OpenAI API key")
 @pytest.mark.test
 def test_completions(prompter: Prompter, tmp_path):
     """Test that completions processes a dataset correctly.
@@ -64,6 +66,7 @@ def test_completions(prompter: Prompter, tmp_path):
     assert "confidence" in result_dataset.column_names
 
 
+@pytest.mark.skip(reason="Requires OpenAI API key")
 @pytest.mark.test
 def test_single_completion_batch(prompter: Prompter):
     """Test that a single completion works with batch=True.
@@ -101,6 +104,7 @@ def test_single_completion_batch(prompter: Prompter):
     assert hasattr(result, "confidence")
 
 
+@pytest.mark.skip(reason="Requires OpenAI API key")
 @pytest.mark.test
 def test_single_completion_no_batch(prompter: Prompter):
     """Test that a single completion works without batch parameter.
@@ -138,7 +142,7 @@ def test_single_completion_no_batch(prompter: Prompter):
 
 
 @pytest.mark.test
-def test_clear_cache(prompter: Prompter, tmp_path):
+def test_clear_cache(tmp_path):
     """Test that clear_cache removes all cached data."""
     # Set up temporary cache directory
     cache_dir = str(tmp_path)
@@ -170,7 +174,7 @@ def test_clear_cache(prompter: Prompter, tmp_path):
     assert os.path.exists(readonly_file)
 
     # Clear cache
-    prompter.clear_cache(working_dir=cache_dir)
+    clear_cache(working_dir=cache_dir)
 
     # Verify cache is cleared (even with readonly file)
     assert not os.path.exists(metadata_db_path)
@@ -179,10 +183,10 @@ def test_clear_cache(prompter: Prompter, tmp_path):
 
     # Test clearing non-existent directory (should not raise error)
     non_existent_dir = os.path.join(tmp_path, "non_existent")
-    prompter.clear_cache(working_dir=non_existent_dir)
+    clear_cache(working_dir=non_existent_dir)
 
     # Test using environment variable
     os.environ["CURATOR_CACHE_DIR"] = str(tmp_path)
     os.makedirs(os.path.join(str(tmp_path), "env_var_test"))
-    prompter.clear_cache()  # Should use CURATOR_CACHE_DIR
+    clear_cache()  # Should use CURATOR_CACHE_DIR
     assert len(os.listdir(str(tmp_path))) == 0
