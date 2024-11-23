@@ -1,4 +1,6 @@
+"""OpenAI online request processor."""
 import asyncio
+import aiohttp
 import json
 import logging
 import os
@@ -9,7 +11,6 @@ from functools import partial
 from typing import Any, Callable, Dict, Optional, Set, Tuple, TypeVar
 import resource
 
-import aiohttp
 import requests
 import tiktoken
 from tqdm import tqdm
@@ -44,7 +45,7 @@ class OpenAIOnlineRequestProcessor(BaseRequestProcessor):
         self.temperature: float = temperature
         self.top_p: float = top_p
 
-    def get_rate_limits(self) -> dict:
+    async def get_rate_limits(self) -> dict:
         """
         Function to get rate limits for a given annotator. Makes a single request to openAI API
         and gets the rate limits from the response headers. These rate limits vary per model
@@ -60,31 +61,30 @@ class OpenAIOnlineRequestProcessor(BaseRequestProcessor):
             tuple[int, int]: A tuple containing the maximum number of requests and tokens per minute.
         """
         # Send a dummy request to get rate limit information
-        response = requests.post(
-            self.url,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "messages": []},
-        )
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={"model": self.model, "messages": []},
+                ) as response:
+                    await response.json()  # Ensure we await the response
+                    rpm = int(response.headers.get("x-ratelimit-limit-requests", 30_000))
+                    tpm = int(response.headers.get("x-ratelimit-limit-tokens", 150_000_000))
 
-        rpm = int(response.headers.get("x-ratelimit-limit-requests", 0))
-        tpm = int(response.headers.get("x-ratelimit-limit-tokens", 0))
+                    logger.info(f"Automatically set max_requests_per_minute to {rpm}")
+                    logger.info(f"Automatically set max_tokens_per_minute to {tpm}")
 
-        if not rpm or not tpm:
-            logger.warning(
-                "Failed to get rate limits from OpenAI API, using default values"
-            )
-            rpm = 30_000
-            tpm = 150_000_000
-
-        logger.info(f"Automatically set max_requests_per_minute to {rpm}")
-        logger.info(f"Automatically set max_tokens_per_minute to {tpm}")
-
-        rate_limits = {
-            "max_requests_per_minute": rpm,
-            "max_tokens_per_minute": tpm,
-        }
-
-        return rate_limits
+                    return {
+                        "max_requests_per_minute": rpm,
+                        "max_tokens_per_minute": tpm,
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to get rate limits from OpenAI API: {e}, using default values")
+            return {
+                "max_requests_per_minute": 30_000,
+                "max_tokens_per_minute": 150_000_000
+            }
 
     def create_api_specific_request(
         self, generic_request: GenericRequest
@@ -119,7 +119,7 @@ class OpenAIOnlineRequestProcessor(BaseRequestProcessor):
 
         return request
 
-    def run(
+    async def run(
         self,
         dataset: Optional[Dataset],
         working_dir: str,
@@ -146,7 +146,7 @@ class OpenAIOnlineRequestProcessor(BaseRequestProcessor):
             for i in range(len(generic_requests_files))
         ]
 
-        rate_limits = self.get_rate_limits()
+        rate_limits = await self.get_rate_limits()
         rpm = rate_limits["max_requests_per_minute"]
         tpm = rate_limits["max_tokens_per_minute"]
 
@@ -160,17 +160,15 @@ class OpenAIOnlineRequestProcessor(BaseRequestProcessor):
         for generic_requests_file, generic_responses_file in zip(
             generic_requests_files, generic_responses_files
         ):
-            run_in_event_loop(
-                self.process_generic_requests_from_file(
-                    generic_requests_filepath=generic_requests_file,
-                    save_filepath=generic_responses_file,
-                    request_url=self.url,
-                    max_requests_per_minute=rpm,
-                    max_tokens_per_minute=tpm,
-                    token_encoding_name=token_encoding_name,
-                    max_attempts=5,
-                    resume=True,  # detects existing jobs and resume from there
-                )
+            await self.process_generic_requests_from_file(
+                generic_requests_filepath=generic_requests_file,
+                save_filepath=generic_responses_file,
+                request_url=self.url,
+                max_requests_per_minute=rpm,
+                max_tokens_per_minute=tpm,
+                token_encoding_name=token_encoding_name,
+                max_attempts=5,
+                resume=True,  # detects existing jobs and resume from there
             )
 
         dataset = self.create_dataset_files(
