@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+import shutil
 
 import pytest
 from datasets import Dataset
@@ -134,3 +135,41 @@ def test_single_completion_no_batch(prompter: Prompter):
     assert isinstance(result, MockResponseFormat)
     assert hasattr(result, "message")
     assert hasattr(result, "confidence")
+
+
+@pytest.mark.test
+def test_clear_cache(prompter: Prompter, tmp_path):
+    """Test that clear_cache removes all cached data."""
+    # Set up temporary cache directory
+    cache_dir = str(tmp_path)
+    os.environ["CURATOR_CACHE_DIR"] = cache_dir
+
+    # Create mock cache files and directories
+    metadata_db_path = os.path.join(cache_dir, "metadata.db")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Create a mock metadata.db file
+    with open(metadata_db_path, 'wb') as f:
+        f.write(b'mock db content')
+
+    # Create mock cache directories and files
+    mock_cache_dir = os.path.join(cache_dir, "mock_cache")
+    os.makedirs(mock_cache_dir)
+    with open(os.path.join(mock_cache_dir, "cache.arrow"), 'w') as f:
+        f.write("mock cache data")
+
+    # Verify cache exists
+    assert os.path.exists(metadata_db_path)
+    assert os.path.exists(mock_cache_dir)
+
+    # Clear cache
+    prompter.clear_cache(working_dir=cache_dir)
+
+    # Verify cache is cleared
+    assert not os.path.exists(metadata_db_path)
+    assert not os.path.exists(mock_cache_dir)
+    assert len(os.listdir(cache_dir)) == 0
+
+    # Test clearing non-existent directory (should not raise error)
+    non_existent_dir = os.path.join(tmp_path, "non_existent")
+    prompter.clear_cache(working_dir=non_existent_dir)
