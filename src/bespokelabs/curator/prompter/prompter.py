@@ -2,6 +2,7 @@
 
 import inspect
 import os
+import shutil
 from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, Optional, Type, TypeVar, Union
 
@@ -114,6 +115,32 @@ class Prompter:
             working_dir (str): The working directory to save the requests.jsonl, responses.jsonl, and dataset.arrow files.
         """
         return self._completions(self._request_processor, dataset, working_dir)
+
+    def clear_cache(self, working_dir: Optional[str] = None) -> None:
+        """Clear all cached data for this prompter instance.
+
+        Args:
+            working_dir (Optional[str]): Specific working directory to clear.
+                If None, clears the default cache directory.
+        """
+        cache_dir = (working_dir if working_dir is not None
+                    else os.path.expanduser(_CURATOR_DEFAULT_CACHE_DIR))
+
+        if not os.path.exists(cache_dir):
+            return
+
+        # Clear metadata DB
+        metadata_db_path = os.path.join(cache_dir, "metadata.db")
+        if os.path.exists(metadata_db_path):
+            os.remove(metadata_db_path)
+
+        # Clear all cached files
+        for item in os.listdir(cache_dir):
+            item_path = os.path.join(cache_dir, item)
+            if os.path.isfile(item_path):
+                os.remove(item_path)
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path)
 
     def _completions(
         self,
