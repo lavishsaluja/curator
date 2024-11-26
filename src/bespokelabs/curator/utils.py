@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_CURATOR_DEFAULT_CACHE_DIR = "~/.curator/cache"
+_CURATOR_DEFAULT_CACHE_DIR = "~/.cache/curator"
 
 def clear_cache(working_dir: str | None = None) -> None:
     """Clear all cached data for curator.
